@@ -1,5 +1,6 @@
 from torch import nn
 
+
 class Generator(nn.Module):
     def __init__(self, z_dim, img_dim):
         super(Generator, self).__init__()

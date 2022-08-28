@@ -6,6 +6,7 @@ import torch
 import operator
 import numpy as np
 import torchvision
+import torchvision.datasets as datasets
 import torchvision.transforms as transforms
 import torch.nn.functional as F
 
@@ -14,8 +15,8 @@ from functools import reduce
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
-from .utils import load_yaml
-from .block_gan import Generator, Discriminator
+from utils import load_yaml
+from block_gan import Generator, Discriminator
 
 
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else "cpu")
@@ -39,7 +40,7 @@ def train_model(config):
         transforms.Normalize((0.1307,), (0.3081,)),  # (0.5,), (0.5,)
     ])
 
-    dataset = torchvision.datasets.MNIST(root="dataset/", transform=data_transforms, download=True)
+    dataset = datasets.MNIST(root="dataset/", transform=data_transforms, download=True)
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
     opt_disc = torch.optim.Adam(disc.parameters(), lr=lr)  # use SGD?
     opt_gen = torch.optim.Adam(gen.parameters(), lr=lr)
@@ -91,6 +92,8 @@ def train_model(config):
                     writer_real.add_image(
                         "Mnist Real Images", img_grid_real, global_step=global_step
                     )
+                    writer_fake.add_scalar('Generator loss', lossG, global_step=global_step)
+                    writer_real.add_scalar('Discriminator loss', lossD, global_step=global_step)
                     global_step += 1
 
 if __name__ == "__main__":

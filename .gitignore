@@ -9,6 +9,7 @@ scratch/
 *.so
 
 # Distribution / packaging
+dataset/
 .Python
 build/
 develop-eggs/
