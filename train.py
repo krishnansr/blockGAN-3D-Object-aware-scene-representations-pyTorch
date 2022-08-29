@@ -37,7 +37,7 @@ def train_model(config):
     fixed_noise = torch.randn((batch_size, z_dim)).to(DEVICE)
     data_transforms = transforms.Compose([
         transforms.ToTensor(),
-        transforms.Normalize((0.1307,), (0.3081,)),  # (0.5,), (0.5,)
+        transforms.Normalize((0.5,), (0.5,)),  # (0.1307,), (0.3081,)
     ])
 
     dataset = datasets.MNIST(root="dataset/", transform=data_transforms, download=True)
@@ -76,7 +76,7 @@ def train_model(config):
 
             if batch_idx == 0:
                 print(
-                    f"Epoch [{epoch}/{num_epochs}] Batch {batch_idx}/{len(loader)} \
+                    f"\nEpoch [{epoch}/{num_epochs}] Batch {batch_idx}/{len(loader)} \
                               Loss D: {lossD:.4f}, loss G: {lossG:.4f}"
                 )
 
