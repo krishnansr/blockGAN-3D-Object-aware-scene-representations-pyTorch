@@ -96,6 +96,7 @@ def train_model(config):
                     writer_real.add_scalar('Discriminator loss', lossD, global_step=global_step)
                     global_step += 1
 
+
 if __name__ == "__main__":
     config_file = ''
     train_model(config=load_yaml(config_file))
