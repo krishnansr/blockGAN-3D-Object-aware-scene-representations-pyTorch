@@ -15,10 +15,13 @@ def load_yaml(config_file):
     return config_obj
 
 
-class CompCarsData(Dataset):
+class CompCarsDataset(Dataset):
     def __init__(self, root, transforms_, mode='train'):
         self.transform = transforms.Compose(transforms_)
         self.files = glob.glob(f'{root}/cars_test/*.jpg') + glob.glob(f'{root}/cars_train/*.jpg')
+
+        if self.__len__() == 0:
+            raise FileNotFoundError('Dataset loading error')
 
     def __getitem__(self, index):
         filepath = self.files[index % len(self.files)]

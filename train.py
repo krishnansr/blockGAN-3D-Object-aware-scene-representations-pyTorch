@@ -15,7 +15,7 @@ from functools import reduce
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
-from utils import load_yaml
+from utils import load_yaml, CompCarsDataset
 from block_gan import Generator, Discriminator
 
 
@@ -25,23 +25,32 @@ print(f'using torch device: {DEVICE}, torch ver: {torch.__version__}')
 
 def train_model(config):
     # get hyperparams
-    lr = config.get('LR', 2e-3)  # 3e-4
-    z_dim = config.get('Z_DIM', 64)  # 128, 256
+    img_height = config.get('IMG_HEIGHT', 64)  # 128, 256
+    lr = config.get('LR', 3e-4)  # 3e-4
+    z_dim = config.get('Z_DIM', 128)  # 128, 256
+    ngf = config.get('NGF', 64)
+    ndf = config.get('NDF', 32)
     batch_size = config.get('BATCH_SIZE', 32)
     num_epochs = config.get('EPOCHS', 50)
+    seed = config.get('SEED', 100)
+    num_workers = config.get('NUM_WORKERS', 100)
     image_dim = config.get('IMAGE_DIMS', (28, 28, 1))
     image_dim = reduce(operator.mul, image_dim)
+    torch.manual_seed(seed)
 
-    disc = Discriminator(image_dim).to(DEVICE)
-    gen = Generator(z_dim, image_dim).to(DEVICE)
+    disc = Discriminator(n_features=ndf, z_dim=z_dim).to(DEVICE)
+    gen = Generator(n_features=ngf, z_dim=z_dim).to(DEVICE)
     fixed_noise = torch.randn((batch_size, z_dim)).to(DEVICE)
     data_transforms = transforms.Compose([
+        transforms.Resize(img_height),
+        transforms.CenterCrop(img_height),
         transforms.ToTensor(),
-        transforms.Normalize((0.5,), (0.5,)),  # (0.1307,), (0.3081,)
+        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
     ])
 
-    dataset = datasets.MNIST(root="dataset/", transform=data_transforms, download=True)
-    loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+    # dataset = datasets.MNIST(root="dataset/", transform=data_transforms, download=True)
+    dataset = CompCarsDataset(root="CompCarsDataset/", transforms_=data_transforms)
+    loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
     opt_disc = torch.optim.Adam(disc.parameters(), lr=lr)  # use SGD?
     opt_gen = torch.optim.Adam(gen.parameters(), lr=lr)
     criterion = torch.nn.BCELoss()  # simulate minimax eq
