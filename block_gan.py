@@ -7,7 +7,7 @@ from torch import nn
 
 
 class Generator(nn.Module):
-    def __init__(self, n_features, z_dim):
+    def __init__(self, n_features, z_dim, angles):
         super(Generator, self).__init__()
         self.tanh = nn.Tanh()
         self.out_ch = 3
@@ -44,6 +44,91 @@ class Generator(nn.Module):
         self.rb2_2d = GenResBlockNdim(pnf // 4, pnf // 8, n_dims=2)
         self.adain_4, self.z_mlp4 = self._adain_module_2d(z_dim, pnf // 8)
         self.conv_final = nn.Conv2d(pnf // 8, self.out_ch, 3, padding=1)
+
+        # calc theta angles
+        self.angles = self._angles_to_dict(angles)
+        self.rot2idx = {
+            'x': 0,
+            'y': 1,
+            'z': 2
+        }
+
+    def _to_radians(self, deg):
+        return deg * (np.pi / 180)
+
+    def _angles_to_dict(self, angles):
+        angles = {
+            'min_angle_x': self._to_radians(angles[0]),
+            'max_angle_x': self._to_radians(angles[1]),
+            'min_angle_y': self._to_radians(angles[2]),
+            'max_angle_y': self._to_radians(angles[3]),
+            'min_angle_z': self._to_radians(angles[4]),
+            'max_angle_z': self._to_radians(angles[5])
+        }
+        return angles
+
+    def rot_matrix_x(self, theta):
+        mat = np.zeros((3,3)).astype(np.float32)
+        mat[0, 0] = 1.
+        mat[1, 1] = np.cos(theta)
+        mat[1, 2] = -np.sin(theta)
+        mat[2, 1] = np.sin(theta)
+        mat[2, 2] = np.cos(theta)
+        return mat
+
+    def rot_matrix_y(self, theta):
+        mat = np.zeros((3,3)).astype(np.float32)
+        mat[0, 0] = np.cos(theta)
+        mat[0, 2] = np.sin(theta)
+        mat[1, 1] = 1.
+        mat[2, 0] = -np.sin(theta)
+        mat[2, 2] = np.cos(theta)
+        return mat
+
+    def rot_matrix_z(self, theta):
+        mat = np.zeros((3,3)).astype(np.float32)
+        mat[0, 0] = np.cos(theta)
+        mat[0, 1] = -np.sin(theta)
+        mat[1, 0] = np.sin(theta)
+        mat[1, 1] = np.cos(theta)
+        mat[2, 2] = 1.
+        return mat
+
+    def pad_rotmat(self, theta):
+        return np.hstack((theta, np.zeros((3,1))))
+
+    def sample_angles(self,
+                      bs,
+                      min_angle_x,
+                      max_angle_x,
+                      min_angle_y,
+                      max_angle_y,
+                      min_angle_z,
+                      max_angle_z):
+        angles = []
+        for i in range(bs):
+            rnd_angles = [
+                np.random.uniform(min_angle_x, max_angle_x),
+                np.random.uniform(min_angle_y, max_angle_y),
+                np.random.uniform(min_angle_z, max_angle_z),
+            ]
+            angles.append(rnd_angles)
+        return np.asarray(angles)
+
+    def get_theta(self, angles):
+        bs = len(angles)
+        theta = np.zeros((bs, 3, 4))
+
+        angles_x = angles[:, 0]
+        angles_y = angles[:, 1]
+        angles_z = angles[:, 2]
+        for i in range(bs):
+            theta[i] = self.pad_rotmat(
+                np.dot(np.dot(self.rot_matrix_z(angles_z[i]), self.rot_matrix_y(angles_y[i])),
+                       self.rot_matrix_x(angles_x[i]))
+            )
+
+        return torch.from_numpy(theta).float()
 
     @staticmethod
     def _adain_module_3d(z_dim, out_ch):
