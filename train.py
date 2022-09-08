@@ -25,8 +25,8 @@ from utils import (
     create_dirs,
 )
 
-
-DEVICE = torch.device('cuda' if torch.cuda.is_available() else "cpu")
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"  # specify GPUs to use
+DEVICE = torch.device(f'cuda' if torch.cuda.is_available() else "cpu")
 print(f'using torch device: {DEVICE}, torch ver: {torch.__version__}')
 datetime_now = datetime.now() # current date and time
 
