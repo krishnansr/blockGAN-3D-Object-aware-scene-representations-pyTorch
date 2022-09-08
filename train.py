@@ -41,7 +41,12 @@ def train_model(config):
 
     disc = Discriminator(n_features=ndf, z_dim=z_dim).to(DEVICE)
     gen = Generator(n_features=ngf, z_dim=z_dim, angles=angles).to(DEVICE)
-    fixed_noise = torch.randn((batch_size, z_dim)).to(DEVICE)
+    # fixed_noise = torch.randn((batch_size, z_dim)).to(DEVICE)
+    _rnd_state = np.random.RandomState(seed)
+    fixed_noise = torch.from_numpy(
+        _rnd_state.normal(0, 1, size=(batch_size, z_dim))
+    ).float().cuda()
+
     data_transforms = [
         transforms.Resize(img_height),
         transforms.CenterCrop(img_height),
@@ -62,7 +67,8 @@ def train_model(config):
     global_step = 0
     for epoch in range(num_epochs):
         for batch_idx, real in enumerate(tqdm(loader)):
-            real = real.view(-1, image_dim).to(DEVICE)
+            # real = real.view(-1, image_dim).to(DEVICE)
+            real = real.to(DEVICE)
             batch_size = real.shape[0]
 
             # train Discriminator: max log(D(real)) + log(1 - D(G(z)))
@@ -76,22 +82,22 @@ def train_model(config):
             ).float()
             z = z.cuda()
 
-            angles = gen.sample_angles(z.size(0), *angles)
-            thetas = gen.get_theta(angles)
+            euler_angles = gen.sample_angles(z.size(0), *angles)
+            thetas = gen.get_theta(euler_angles)
             if z.is_cuda:
                 thetas = thetas.cuda()
 
             fake = gen(z, thetas)  # G(z)
-            disc_real = disc(real).view(-1)
+            disc_real, _, _ = disc(real)
             lossD_real = criterion(disc_real, torch.ones_like(disc_real))
-            disc_fake = disc(fake).view(-1)
+            disc_fake, _, _ = disc(fake)
             lossD_fake = criterion(disc_fake, torch.zeros_like(disc_fake))
             lossD = (lossD_real + lossD_fake) / 2
             disc.zero_grad()
             lossD.backward(retain_graph=True)
             opt_disc.step()
 
-            output = disc(fake).view(-1)
+            output, _, _ = disc(fake)
             lossG = criterion(output, torch.ones_like(output))
             gen.zero_grad()
             lossG.backward()
@@ -104,8 +110,9 @@ def train_model(config):
                 )
 
                 with torch.no_grad():
-                    fake = gen(fixed_noise, thetas).reshape(-1, 1, 28, 28)
-                    data = real.reshape(-1, 1, 28, 28)
+                    fake = gen(fixed_noise, thetas)
+                    fake = fake.reshape(-1, 3, img_height, img_height)
+                    data = real.reshape(-1, 3, img_height, img_height)
                     img_grid_fake = torchvision.utils.make_grid(fake, normalize=True)
                     img_grid_real = torchvision.utils.make_grid(data, normalize=True)
 
