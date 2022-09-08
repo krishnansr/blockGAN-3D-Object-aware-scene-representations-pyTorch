@@ -1,6 +1,6 @@
 # import warnings
 # warnings.filterwarnings('always')
-
+import os
 import cv2
 import torch
 import operator
@@ -8,6 +8,7 @@ import numpy as np
 import torchvision
 import torchvision.datasets as datasets
 import torchvision.transforms as transforms
+import torchvision.utils as vutils
 import torch.nn.functional as F
 
 from tqdm import tqdm
@@ -15,12 +16,19 @@ from functools import reduce
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
-from utils import load_yaml, CompCarsDataset
+from datetime import datetime
 from block_gan import Generator, Discriminator
+from utils import (
+    load_yaml,
+    CompCarsDataset,
+    save_model,
+    create_dirs,
+)
 
 
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else "cpu")
 print(f'using torch device: {DEVICE}, torch ver: {torch.__version__}')
+datetime_now = datetime.now() # current date and time
 
 
 def train_model(config):
@@ -35,8 +43,12 @@ def train_model(config):
     num_epochs = config.get('EPOCHS', 50)
     seed = config.get('SEED', 123)
     num_workers = config.get('NUM_WORKERS', 1)
+    model_dir = config.get('MODEL_DIR', f'experiments/{datetime_now.strftime("%Y_%m_%d-%H_%M")}')
     image_dim = config.get('IMAGE_DIMS', (img_height, img_height, 1))
     image_dim = reduce(operator.mul, image_dim)
+
+    create_dirs(model_dir=model_dir)
+    create_dirs(model_dir=os.path.join(model_dir, 'imgs'))
     torch.manual_seed(seed)
 
     disc = Discriminator(n_features=ndf, z_dim=z_dim).to(DEVICE)
@@ -65,7 +77,7 @@ def train_model(config):
     writer_fake = SummaryWriter(f"runs/GAN_CARS/fake")
     writer_real = SummaryWriter(f"runs/GAN_CARS/real")
     global_step = 0
-    for epoch in range(num_epochs):
+    for epoch in range(1, num_epochs + 1):
         for batch_idx, real in enumerate(tqdm(loader)):
             # real = real.view(-1, image_dim).to(DEVICE)
             real = real.to(DEVICE)
@@ -113,8 +125,8 @@ def train_model(config):
                     fake = gen(fixed_noise, thetas)
                     fake = fake.reshape(-1, 3, img_height, img_height)
                     data = real.reshape(-1, 3, img_height, img_height)
-                    img_grid_fake = torchvision.utils.make_grid(fake, normalize=True)
-                    img_grid_real = torchvision.utils.make_grid(data, normalize=True)
+                    img_grid_fake = vutils.make_grid(fake, normalize=True)
+                    img_grid_real = vutils.make_grid(data, normalize=True)
 
                     writer_fake.add_image(
                         "Cars Fake Images", img_grid_fake, global_step=global_step
@@ -122,9 +134,17 @@ def train_model(config):
                     writer_real.add_image(
                         "Cars Real Images", img_grid_real, global_step=global_step
                     )
+                    vutils.save_image(img_grid_fake, os.path.join(os.getcwd(), model_dir, 'imgs',
+                                                                  f'fake_grid_{epoch}_{global_step}.png'))
+                    vutils.save_image(img_grid_real, os.path.join(os.getcwd(), model_dir, 'imgs',
+                                                                  f'real_grid_{epoch}_{global_step}.png'))
+
                     writer_fake.add_scalar('Generator loss', lossG, global_step=global_step)
                     writer_real.add_scalar('Discriminator loss', lossD, global_step=global_step)
                     global_step += 1
+
+            # model save
+            save_model(filename=f"{model_dir}/epoch_{epoch}.pkl", epoch=epoch, gen=gen, disc=disc)
 
 
 if __name__ == "__main__":
