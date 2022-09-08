@@ -125,8 +125,8 @@ def train_model(config):
                     fake = gen(fixed_noise, thetas)
                     fake = fake.reshape(-1, 3, img_height, img_height)
                     data = real.reshape(-1, 3, img_height, img_height)
-                    img_grid_fake = vutils.make_grid(fake, normalize=True)
-                    img_grid_real = vutils.make_grid(data, normalize=True)
+                    img_grid_fake = vutils.make_grid(fake, nrow=16, normalize=True)
+                    img_grid_real = vutils.make_grid(data, nrow=16, normalize=True)
 
                     writer_fake.add_image(
                         "Cars Fake Images", img_grid_fake, global_step=global_step
