@@ -29,7 +29,7 @@ import matplotlib.pyplot as plt
 
 
 
-BASE_PATH = r"C:\datasets\comp_cars"
+BASE_PATH = r"/shared/home/c_sivarams/datasets/comp_cars"
 IMAGES_PATH = os.path.sep.join([BASE_PATH, "image"])
 ANNOTS_PATH = os.path.sep.join([BASE_PATH, "label"])
 
@@ -51,6 +51,14 @@ NUM_EPOCHS = 20
 BATCH_SIZE = 32
 LABELS = 1.0
 BBOX = 1.0
+
+
+def create_dirs(model_dir):
+    if not osp.exists(model_dir):
+        os.makedirs(model_dir)
+
+create_dirs(BASE_OUTPUT)
+create_dirs(PLOTS_PATH)
 
 
 class CarsDataset(Dataset):
@@ -122,7 +130,7 @@ for root, dirs, files in os.walk(IMAGES_PATH):
             _image_paths.append(os.path.join(root, f))
 _label_paths = [ip.replace('image', 'label').replace('.jpg', '.txt') for ip in _image_paths]
 
-for lp, ip in zip(_label_paths, _image_paths):
+for lp, ip in zip(_label_paths, _image_paths[:100]):
     if not osp.exists(lp):
         continue
     if not osp.exists(ip):
@@ -190,19 +198,13 @@ print("[INFO] total test samples: {}...".format(len(testDS)))
 trainSteps = len(trainDS) // BATCH_SIZE
 valSteps = len(testDS) // BATCH_SIZE
 # create data loaders
-trainLoader = DataLoader(trainDS, batch_size=BATCH_SIZE,
-                         shuffle=True, num_workers=os.cpu_count(), pin_memory=PIN_MEMORY)
-testLoader = DataLoader(testDS, batch_size=BATCH_SIZE,
-                        num_workers=os.cpu_count(), pin_memory=PIN_MEMORY)
+trainLoader = DataLoader(trainDS, batch_size=BATCH_SIZE, shuffle=True, num_workers=1)
+testLoader = DataLoader(testDS, batch_size=BATCH_SIZE, num_workers=1)
 
 print("[INFO] saving testing image paths...")
-f = open(TEST_PATHS, "w")
-f.write("\n".join(testPaths))
-f.close()
-# load the ResNet50 network
+with open(TEST_PATHS, "w") as f:
+    f.write("\n".join(testPaths))
 resnet = resnet50(pretrained=True)
-# freeze all ResNet50 layers so they will *not* be updated during the
-# training process
 for param in resnet.parameters():
     param.requires_grad = False
 
@@ -281,29 +283,30 @@ for e in tqdm(range(NUM_EPOCHS)):
         avgValLoss, valCorrect))
     endTime = time.time()
     print("[INFO] total time taken to train the model: {:.2f}s".format(
-    endTime - startTime))
+        endTime - startTime))
 
-    print("[INFO] saving object detector model...")
-    torch.save(objectDetector, MODEL_PATH)
-    # serialize the label encoder to disk
-    print("[INFO] saving label encoder...")
-    f = open(LE_PATH, "wb")
-    f.write(pickle.dumps(le))
-    f.close()
-    # plot the training loss and accuracy
-    plt.style.use("ggplot")
-    plt.figure()
-    plt.plot(H["total_train_loss"], label="total_train_loss")
-    plt.plot(H["total_val_loss"], label="total_val_loss")
-    plt.plot(H["train_class_acc"], label="train_class_acc")
-    plt.plot(H["val_class_acc"], label="val_class_acc")
-    plt.title("Total Training Loss and Classification Accuracy on Dataset")
-    plt.xlabel("Epoch #")
-    plt.ylabel("Loss/Accuracy")
-    plt.legend(loc="lower left")
-    # save the training plot
-    plotPath = os.path.sep.join([PLOTS_PATH, "training.png"])
-    plt.savefig(plotPath)
+# save results
+print("[INFO] saving object detector model...")
+torch.save(objectDetector, MODEL_PATH)
+# serialize the label encoder to disk
+print("[INFO] saving label encoder...")
+f = open(LE_PATH, "wb")
+f.write(pickle.dumps(le))
+f.close()
+# plot the training loss and accuracy
+plt.style.use("ggplot")
+plt.figure()
+plt.plot(H["total_train_loss"], label="total_train_loss")
+plt.plot(H["total_val_loss"], label="total_val_loss")
+plt.plot(H["train_class_acc"], label="train_class_acc")
+plt.plot(H["val_class_acc"], label="val_class_acc")
+plt.title("Total Training Loss and Classification Accuracy on Dataset")
+plt.xlabel("Epoch #")
+plt.ylabel("Loss/Accuracy")
+plt.legend(loc="lower left")
+# save the training plot
+plotPath = os.path.sep.join([PLOTS_PATH, "training.png"])
+plt.savefig(plotPath)
 
 
 if __name__ == '__main__':
