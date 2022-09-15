@@ -1,13 +1,13 @@
-import torch
 import os
-import numpy as np
-import pickle
-import torch
-import time
 import cv2
 import glob
+import torch
+import pickle
+import time
+import numpy as np
 import os.path as osp
 
+from tqdm import tqdm
 from torch.nn import Dropout
 from torch.nn import Identity
 from torch.nn import Linear
@@ -24,9 +24,7 @@ from torch.nn import MSELoss
 from torch.optim import Adam
 from torchvision.models import resnet50
 from sklearn.model_selection import train_test_split
-from tqdm import tqdm
 import matplotlib.pyplot as plt
-
 
 
 BASE_PATH = r"/shared/home/c_sivarams/datasets/comp_cars"
@@ -47,7 +45,7 @@ PIN_MEMORY = True if DEVICE == "cuda" else False
 MEAN = [0.485, 0.456, 0.406]
 STD = [0.229, 0.224, 0.225]
 INIT_LR = 1e-4
-NUM_EPOCHS = 20
+NUM_EPOCHS = 200
 BATCH_SIZE = 32
 LABELS = 1.0
 BBOX = 1.0
@@ -80,9 +78,9 @@ class CarsDataset(Dataset):
         return (image, label, bbox)
 
 
-class ObjectDetector(Module):
+class SSODetector(Module):
     def __init__(self, baseModel, numClasses):
-        super(ObjectDetector, self).__init__()
+        super(SSODetector, self).__init__()
         # initialize the base model and the number of classes
         self.baseModel = baseModel
         self.numClasses = numClasses
@@ -116,198 +114,195 @@ class ObjectDetector(Module):
         classLogits = self.classifier(features)
         return (bboxes, classLogits)
 
+if __name__ == '__main__':
 
-print("Loading dataset...")
-data = []
-labels = []
-bboxes = []
-imagePaths = []
+    print("Loading dataset...")
+    data = []
+    labels = []
+    bboxes = []
+    imagePaths = []
 
-_image_paths = []
-for root, dirs, files in os.walk(IMAGES_PATH):
-    for f in files:
-        if os.path.splitext(f)[1].lower() == '.jpg':
-            _image_paths.append(os.path.join(root, f))
-_label_paths = [ip.replace('image', 'label').replace('.jpg', '.txt') for ip in _image_paths]
+    _image_paths = []
+    for root, dirs, files in os.walk(IMAGES_PATH):
+        for f in files:
+            if os.path.splitext(f)[1].lower() == '.jpg':
+                _image_paths.append(os.path.join(root, f))
+    _label_paths = [ip.replace('image', 'label').replace('.jpg', '.txt') for ip in _image_paths]
 
-for lp, ip in zip(_label_paths, _image_paths[:100]):
-    if not osp.exists(lp):
-        continue
-    if not osp.exists(ip):
-        continue
+    for lp, ip in zip(_label_paths, _image_paths[:1000]):
+        if not osp.exists(lp):
+            continue
+        if not osp.exists(ip):
+            continue
 
-    image = cv2.imread(ip)
-    (h, w) = image.shape[:2]
-    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    image = cv2.resize(image, (224, 224))
-    data.append(image)
-    imagePaths.append(ip)
+        image = cv2.imread(ip)
+        (h, w) = image.shape[:2]
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        image = cv2.resize(image, (224, 224))
+        data.append(image)
+        imagePaths.append(ip)
 
-    with open(lp, 'r') as f:
-        l_data = f.readlines()
+        with open(lp, 'r') as f:
+            l_data = f.readlines()
 
-    label = int(l_data[0])
-    bbox = list(map(int, l_data[-1].split()))
-    startX, startY, endX, endY = bbox
-    startX = float(startX) / w
-    startY = float(startY) / h
-    endX = float(endX) / w
-    endY = float(endY) / h
+        label = int(l_data[0])
+        bbox = list(map(int, l_data[-1].split()))
+        startX, startY, endX, endY = bbox
+        startX = float(startX) / w
+        startY = float(startY) / h
+        endX = float(endX) / w
+        endY = float(endY) / h
 
-    labels.append(label)
-    bboxes.append((startX, startY, endX, endY))
-
-
-data = np.array(data, dtype="float32")
-labels = np.array(labels)
-bboxes = np.array(bboxes, dtype="float32")
-imagePaths = np.array(imagePaths)
+        labels.append(label)
+        bboxes.append((startX, startY, endX, endY))
 
 
-le = LabelEncoder()
-labels = le.fit_transform(labels)
-split = train_test_split(data, labels, bboxes, imagePaths, test_size=0.20, random_state=20022)
-# unpack the data split
-(trainImages, testImages) = split[:2]
-(trainLabels, testLabels) = split[2:4]
-(trainBBoxes, testBBoxes) = split[4:6]
-(trainPaths, testPaths) = split[6:]
-
-(trainImages, testImages) = torch.tensor(trainImages), \
-                            torch.tensor(testImages)
-(trainLabels, testLabels) = torch.tensor(trainLabels), \
-                            torch.tensor(testLabels)
-(trainBBoxes, testBBoxes) = torch.tensor(trainBBoxes), \
-                            torch.tensor(testBBoxes)
-# define normalization transforms
-transforms = transforms.Compose([
-    transforms.ToPILImage(),
-    transforms.ToTensor(),
-    transforms.Normalize(MEAN, STD),
-])
+    data = np.array(data, dtype="float32")
+    labels = np.array(labels)
+    bboxes = np.array(bboxes, dtype="float32")
+    imagePaths = np.array(imagePaths)
 
 
-# convert NumPy arrays to PyTorch datasets
-trainDS = CarsDataset((trainImages, trainLabels, trainBBoxes),
-                      transforms=transforms)
-testDS = CarsDataset((testImages, testLabels, testBBoxes),
-                     transforms=transforms)
-print("[INFO] total training samples: {}...".format(len(trainDS)))
-print("[INFO] total test samples: {}...".format(len(testDS)))
-# calculate steps per epoch for training and validation set
-trainSteps = len(trainDS) // BATCH_SIZE
-valSteps = len(testDS) // BATCH_SIZE
-# create data loaders
-trainLoader = DataLoader(trainDS, batch_size=BATCH_SIZE, shuffle=True, num_workers=1)
-testLoader = DataLoader(testDS, batch_size=BATCH_SIZE, num_workers=1)
+    le = LabelEncoder()
+    labels = le.fit_transform(labels)
+    split = train_test_split(data, labels, bboxes, imagePaths, test_size=0.20, random_state=20022)
+    # unpack the data split
+    (trainImages, testImages) = split[:2]
+    (trainLabels, testLabels) = split[2:4]
+    (trainBBoxes, testBBoxes) = split[4:6]
+    (trainPaths, testPaths) = split[6:]
 
-print("[INFO] saving testing image paths...")
-with open(TEST_PATHS, "w") as f:
-    f.write("\n".join(testPaths))
-resnet = resnet50(pretrained=True)
-for param in resnet.parameters():
-    param.requires_grad = False
+    (trainImages, testImages) = torch.tensor(trainImages), \
+                                torch.tensor(testImages)
+    (trainLabels, testLabels) = torch.tensor(trainLabels), \
+                                torch.tensor(testLabels)
+    (trainBBoxes, testBBoxes) = torch.tensor(trainBBoxes), \
+                                torch.tensor(testBBoxes)
+    # define normalization transforms
+    transforms = transforms.Compose([
+        transforms.ToPILImage(),
+        transforms.ToTensor(),
+        transforms.Normalize(MEAN, STD),
+    ])
 
 
-objectDetector = ObjectDetector(resnet, len(le.classes_))
-objectDetector = objectDetector.to(DEVICE)
-classLossFunc = CrossEntropyLoss()
-bboxLossFunc = MSELoss()
-opt = Adam(objectDetector.parameters(), lr=INIT_LR)
-print(objectDetector)
+    # convert NumPy arrays to PyTorch datasets
+    trainDS = CarsDataset((trainImages, trainLabels, trainBBoxes),
+                          transforms=transforms)
+    testDS = CarsDataset((testImages, testLabels, testBBoxes),
+                         transforms=transforms)
+    print("[INFO] total training samples: {}...".format(len(trainDS)))
+    print("[INFO] total test samples: {}...".format(len(testDS)))
+    # calculate steps per epoch for training and validation set
+    trainSteps = len(trainDS) // BATCH_SIZE
+    valSteps = len(testDS) // BATCH_SIZE
+    # create data loaders
+    trainLoader = DataLoader(trainDS, batch_size=BATCH_SIZE, shuffle=True, num_workers=1)
+    testLoader = DataLoader(testDS, batch_size=BATCH_SIZE, num_workers=1)
 
-# initialize a dictionary to store training history
-H = {"total_train_loss": [], "total_val_loss": [], "train_class_acc": [],
-     "val_class_acc": []}
+    print("[INFO] saving testing image paths...")
+    with open(TEST_PATHS, "w") as f:
+        f.write("\n".join(testPaths))
+    resnet = resnet50(pretrained=True)
+    for param in resnet.parameters():
+        param.requires_grad = False
 
-# loop over epochs
-print("[INFO] training the network...")
-startTime = time.time()
-for e in tqdm(range(NUM_EPOCHS)):
-    objectDetector.train()
-    totalTrainLoss = 0
-    totalValLoss = 0
-    trainCorrect = 0
-    valCorrect = 0
 
-    for (images, labels, bboxes) in trainLoader:
-        # send the input to the device
-        (images, labels, bboxes) = (images.to(DEVICE),
-                                    labels.to(DEVICE), bboxes.to(DEVICE))
-        # perform a forward pass and calculate the training loss
-        predictions = objectDetector(images)
-        bboxLoss = bboxLossFunc(predictions[0], bboxes)
-        classLoss = classLossFunc(predictions[1], labels)
-        totalLoss = (BBOX * bboxLoss) + (LABELS * classLoss)
-        opt.zero_grad()
-        totalLoss.backward()
-        opt.step()
+    objectDetector = SSODetector(resnet, len(le.classes_))
+    objectDetector = objectDetector.to(DEVICE)
+    classLossFunc = CrossEntropyLoss()
+    bboxLossFunc = MSELoss()
+    opt = Adam(objectDetector.parameters(), lr=INIT_LR)
+    print(objectDetector)
 
-        totalTrainLoss += totalLoss
-        trainCorrect += (predictions[1].argmax(1) == labels).type(torch.float).sum().item()
+    # initialize a dictionary to store training history
+    H = {"total_train_loss": [], "total_val_loss": [], "train_class_acc": [],
+         "val_class_acc": []}
 
-    with torch.no_grad():
-        # set the model in evaluation mode
-        objectDetector.eval()
-        # loop over the validation set
-        for (images, labels, bboxes) in testLoader:
+    # loop over epochs
+    print("[INFO] training the network...")
+    startTime = time.time()
+    for e in tqdm(range(NUM_EPOCHS)):
+        objectDetector.train()
+        totalTrainLoss = 0
+        totalValLoss = 0
+        trainCorrect = 0
+        valCorrect = 0
+
+        for (images, labels, bboxes) in trainLoader:
             # send the input to the device
             (images, labels, bboxes) = (images.to(DEVICE),
                                         labels.to(DEVICE), bboxes.to(DEVICE))
-            # make the predictions and calculate the validation loss
+            # perform a forward pass and calculate the training loss
             predictions = objectDetector(images)
             bboxLoss = bboxLossFunc(predictions[0], bboxes)
             classLoss = classLossFunc(predictions[1], labels)
-            totalLoss = (BBOX * bboxLoss) + \
-                        (LABELS * classLoss)
-            totalValLoss += totalLoss
-            # calculate the number of correct predictions
-            valCorrect += (predictions[1].argmax(1) == labels).type(
-                torch.float).sum().item()
+            totalLoss = (BBOX * bboxLoss) + (LABELS * classLoss)
+            opt.zero_grad()
+            totalLoss.backward()
+            opt.step()
 
-    avgTrainLoss = totalTrainLoss / trainSteps
-    avgValLoss = totalValLoss / valSteps
-    # calculate the training and validation accuracy
-    trainCorrect = trainCorrect / len(trainDS)
-    valCorrect = valCorrect / len(testDS)
-    # update our training history
-    H["total_train_loss"].append(avgTrainLoss.cpu().detach().numpy())
-    H["train_class_acc"].append(trainCorrect)
-    H["total_val_loss"].append(avgValLoss.cpu().detach().numpy())
-    H["val_class_acc"].append(valCorrect)
-    # print the model training and validation information
-    print("[INFO] EPOCH: {}/{}".format(e + 1, NUM_EPOCHS))
-    print("Train loss: {:.6f}, Train accuracy: {:.4f}".format(
-        avgTrainLoss, trainCorrect))
-    print("Val loss: {:.6f}, Val accuracy: {:.4f}".format(
-        avgValLoss, valCorrect))
-    endTime = time.time()
-    print("[INFO] total time taken to train the model: {:.2f}s".format(
-        endTime - startTime))
+            totalTrainLoss += totalLoss
+            trainCorrect += (predictions[1].argmax(1) == labels).type(torch.float).sum().item()
 
-# save results
-print("[INFO] saving object detector model...")
-torch.save(objectDetector, MODEL_PATH)
-# serialize the label encoder to disk
-print("[INFO] saving label encoder...")
-f = open(LE_PATH, "wb")
-f.write(pickle.dumps(le))
-f.close()
-# plot the training loss and accuracy
-plt.style.use("ggplot")
-plt.figure()
-plt.plot(H["total_train_loss"], label="total_train_loss")
-plt.plot(H["total_val_loss"], label="total_val_loss")
-plt.plot(H["train_class_acc"], label="train_class_acc")
-plt.plot(H["val_class_acc"], label="val_class_acc")
-plt.title("Total Training Loss and Classification Accuracy on Dataset")
-plt.xlabel("Epoch #")
-plt.ylabel("Loss/Accuracy")
-plt.legend(loc="lower left")
-# save the training plot
-plotPath = os.path.sep.join([PLOTS_PATH, "training.png"])
-plt.savefig(plotPath)
+        with torch.no_grad():
+            # set the model in evaluation mode
+            objectDetector.eval()
+            # loop over the validation set
+            for (images, labels, bboxes) in testLoader:
+                # send the input to the device
+                (images, labels, bboxes) = (images.to(DEVICE),
+                                            labels.to(DEVICE), bboxes.to(DEVICE))
+                # make the predictions and calculate the validation loss
+                predictions = objectDetector(images)
+                bboxLoss = bboxLossFunc(predictions[0], bboxes)
+                classLoss = classLossFunc(predictions[1], labels)
+                totalLoss = (BBOX * bboxLoss) + \
+                            (LABELS * classLoss)
+                totalValLoss += totalLoss
+                # calculate the number of correct predictions
+                valCorrect += (predictions[1].argmax(1) == labels).type(
+                    torch.float).sum().item()
 
+        avgTrainLoss = totalTrainLoss / trainSteps
+        avgValLoss = totalValLoss / valSteps
+        # calculate the training and validation accuracy
+        trainCorrect = trainCorrect / len(trainDS)
+        valCorrect = valCorrect / len(testDS)
+        # update our training history
+        H["total_train_loss"].append(avgTrainLoss.cpu().detach().numpy())
+        H["train_class_acc"].append(trainCorrect)
+        H["total_val_loss"].append(avgValLoss.cpu().detach().numpy())
+        H["val_class_acc"].append(valCorrect)
+        # print the model training and validation information
+        print("[INFO] EPOCH: {}/{}".format(e + 1, NUM_EPOCHS))
+        print("Train loss: {:.6f}, Train accuracy: {:.4f}".format(
+            avgTrainLoss, trainCorrect))
+        print("Val loss: {:.6f}, Val accuracy: {:.4f}".format(
+            avgValLoss, valCorrect))
+        endTime = time.time()
+        print("[INFO] total time taken to train the model: {:.2f}s".format(
+            endTime - startTime))
 
-if __name__ == '__main__':
-    print()
+    # save results
+    print("[INFO] saving object detector model...")
+    torch.save(objectDetector, MODEL_PATH)
+    # serialize the label encoder to disk
+    print("[INFO] saving label encoder...")
+    f = open(LE_PATH, "wb")
+    f.write(pickle.dumps(le))
+    f.close()
+    # plot the training loss and accuracy
+    plt.style.use("ggplot")
+    plt.figure()
+    plt.plot(H["total_train_loss"], label="total_train_loss")
+    plt.plot(H["total_val_loss"], label="total_val_loss")
+    plt.plot(H["train_class_acc"], label="train_class_acc")
+    plt.plot(H["val_class_acc"], label="val_class_acc")
+    plt.title("Total Training Loss and Classification Accuracy on Dataset")
+    plt.xlabel("Epoch #")
+    plt.ylabel("Loss/Accuracy")
+    plt.legend(loc="lower left")
+    # save the training plot
+    plotPath = os.path.sep.join([PLOTS_PATH, "training.png"])
+    plt.savefig(plotPath)
