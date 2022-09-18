@@ -5,6 +5,10 @@ scratch/
 *.py[cod]
 *$py.class
 
+inference_result*
+experiments*
+runs*
+
 # C extensions
 *.so
 
