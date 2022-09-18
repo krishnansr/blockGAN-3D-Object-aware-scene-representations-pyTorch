@@ -26,6 +26,7 @@ from torchvision.models import resnet50
 from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
 
+os.environ["CUDA_VISIBLE_DEVICES"] = "5"  # specify GPUs to use
 
 BASE_PATH = r"/shared/home/c_sivarams/datasets/comp_cars"
 IMAGES_PATH = os.path.sep.join([BASE_PATH, "image"])
@@ -129,7 +130,7 @@ if __name__ == '__main__':
                 _image_paths.append(os.path.join(root, f))
     _label_paths = [ip.replace('image', 'label').replace('.jpg', '.txt') for ip in _image_paths]
 
-    for lp, ip in zip(_label_paths, _image_paths[:1000]):
+    for lp, ip in zip(_label_paths, _image_paths[:]):
         if not osp.exists(lp):
             continue
         if not osp.exists(ip):
