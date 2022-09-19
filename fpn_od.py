@@ -28,16 +28,13 @@ import matplotlib.pyplot as plt
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "5"  # specify GPUs to use
 
-BASE_PATH = r"/shared/home/c_sivarams/datasets/comp_cars"
+BASE_PATH = r"/local/scratch/c_sivarams/datasets/comp_cars"
 IMAGES_PATH = os.path.sep.join([BASE_PATH, "image"])
 ANNOTS_PATH = os.path.sep.join([BASE_PATH, "label"])
 
 BASE_OUTPUT = "experiments_od"
-MODEL_PATH = os.path.sep.join([BASE_OUTPUT, "detector.pth"])
-LE_PATH = os.path.sep.join([BASE_OUTPUT, "le.pickle"])
 PLOTS_PATH = os.path.sep.join([BASE_OUTPUT, "plots"])
 TEST_PATHS = os.path.sep.join([BASE_OUTPUT, "test_paths.txt"])
-
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 PIN_MEMORY = True if DEVICE == "cuda" else False
@@ -46,7 +43,7 @@ PIN_MEMORY = True if DEVICE == "cuda" else False
 MEAN = [0.485, 0.456, 0.406]
 STD = [0.229, 0.224, 0.225]
 INIT_LR = 1e-4
-NUM_EPOCHS = 200
+NUM_EPOCHS = 50
 BATCH_SIZE = 32
 LABELS = 1.0
 BBOX = 1.0
@@ -136,7 +133,7 @@ if __name__ == '__main__':
         if not osp.exists(ip):
             continue
 
-        image = cv2.imread(ip)
+        image = cv2.imread(ip)  # fixme dataloader
         (h, w) = image.shape[:2]
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         image = cv2.resize(image, (224, 224))
@@ -285,14 +282,19 @@ if __name__ == '__main__':
         print("[INFO] total time taken to train the model: {:.2f}s".format(
             endTime - startTime))
 
-    # save results
-    print("[INFO] saving object detector model...")
-    torch.save(objectDetector, MODEL_PATH)
-    # serialize the label encoder to disk
-    print("[INFO] saving label encoder...")
-    f = open(LE_PATH, "wb")
-    f.write(pickle.dumps(le))
-    f.close()
+        # save current epoch's results
+        EPOCH_PATH = os.path.sep.join([BASE_OUTPUT, f"epoch_{e + 1}"])
+        create_dirs(EPOCH_PATH)
+        MODEL_PATH = os.path.sep.join([EPOCH_PATH, "detector.pth"])
+        LE_PATH = os.path.sep.join([EPOCH_PATH, "le.pickle"])
+        print("[INFO] saving object detector model...")
+        torch.save(objectDetector, MODEL_PATH)
+        # serialize the label encoder to disk
+        print("[INFO] saving label encoder...")
+        with open(LE_PATH, "wb") as f:
+            f.write(pickle.dumps(le))
+
+
     # plot the training loss and accuracy
     plt.style.use("ggplot")
     plt.figure()
